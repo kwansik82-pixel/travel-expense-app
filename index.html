@@ -693,28 +693,25 @@
       const dateStr = dateFrom.replace(/-/g, '');
 
       // CORS 우회를 위해 프록시 사용
-      // prodcd 없이 전체 조회 후 유종 필터링
+      // corsproxy.io 프록시 사용
       const apiUrl = `https://www.opinet.co.kr/api/avgAllPrice.do?code=${OPINET_KEY}&out=json`;
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`;
+      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(apiUrl)}`;
 
       const resp = await fetch(proxyUrl);
-      const wrapper = await resp.json();
-      const json = JSON.parse(wrapper.contents);
-      console.log('오피넷 전체 응답:', JSON.stringify(json).slice(0, 500));
+      const text = await resp.text();
+      console.log('오피넷 원본 텍스트:', text.slice(0, 300));
+      const json = JSON.parse(text);
 
       let price = 0;
       const oilArr = (json.RESULT && (json.RESULT.OIL || json.RESULT.oil)) || [];
-      console.log('OIL 배열:', JSON.stringify(oilArr));
-
       console.log('전체 OIL 항목들:', oilArr.map(o => ({코드: o.PRODCD, 이름: o.PRODCD_NM, 가격: o.PRICE})));
+
       if (oilArr.length > 0) {
-        // PRODCD로 정확히 매칭
         const match = oilArr.find(o => o.PRODCD === fuelType);
         if (match) {
           price = match.PRICE || 0;
           console.log('매칭 성공:', match.PRODCD_NM, price);
         } else {
-          // 매칭 실패시 첫번째 항목
           price = oilArr[0].PRICE || 0;
           console.log('매칭 실패, 첫번째 사용:', oilArr[0]);
         }
