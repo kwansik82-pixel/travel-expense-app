@@ -693,28 +693,24 @@
       const dateStr = dateFrom.replace(/-/g, '');
 
       // CORS 우회를 위해 프록시 사용
-      // corsproxy.io 프록시 사용
-      const apiUrl = `https://www.opinet.co.kr/api/avgAllPrice.do?code=${OPINET_KEY}&out=json`;
+      // 오피넷 avgRecentPrice API 시도 (날짜별 평균가)
+      const apiUrl = `https://www.opinet.co.kr/api/avgRecentPrice.do?code=${OPINET_KEY}&out=json&prodcd=${fuelType}&cnt=1`;
       const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(apiUrl)}`;
 
       const resp = await fetch(proxyUrl);
       const text = await resp.text();
-      console.log('오피넷 원본 텍스트:', text.slice(0, 300));
+      console.log('오피넷 원본 텍스트:', text.slice(0, 500));
       const json = JSON.parse(text);
 
       let price = 0;
+      // avgRecentPrice 응답 구조: RESULT.OIL 배열
       const oilArr = (json.RESULT && (json.RESULT.OIL || json.RESULT.oil)) || [];
-      console.log('전체 OIL 항목들:', oilArr.map(o => ({코드: o.PRODCD, 이름: o.PRODCD_NM, 가격: o.PRICE})));
+      console.log('전체 OIL 항목들:', JSON.stringify(oilArr).slice(0, 300));
 
       if (oilArr.length > 0) {
-        const match = oilArr.find(o => o.PRODCD === fuelType);
-        if (match) {
-          price = match.PRICE || 0;
-          console.log('매칭 성공:', match.PRODCD_NM, price);
-        } else {
-          price = oilArr[0].PRICE || 0;
-          console.log('매칭 실패, 첫번째 사용:', oilArr[0]);
-        }
+        const item = oilArr[0];
+        price = item.PRICE || item.price || 0;
+        console.log('가격 항목:', JSON.stringify(item));
       }
 
       fuelPrice = price;
@@ -724,7 +720,7 @@
       document.getElementById('capture-date-label').textContent = `조회 기준일: ${dateFrom}`;
       document.getElementById('capture-time-label').textContent = `출력일시: ${now.toLocaleString('ko-KR')}`;
 
-      const displayName = fuelDisplayNames[fuelType] || fuelName;
+      const displayName = {'B027':'휘발유','D047':'경유','K015':'LPG'}[fuelType] || fuelName;
       const tbody = document.getElementById('fuel-table-body');
       tbody.innerHTML = `
         <tr>
@@ -912,7 +908,7 @@
     }
   }
 
-  // PDF 생성
+  // PDF 생성 (한 장)
   async function generatePDF() {
     setStatus(4, 'loading', 'PDF를 생성하는 중...');
     document.getElementById('btn-pdf').disabled = true;
@@ -921,36 +917,47 @@
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
+      const margin = 12;
+      const pageW = 210;
+      const pageH = 297;
+      const imgW = pageW - margin * 2;
+      const traveler = document.getElementById('traveler').value || '';
+      const dateFrom = document.getElementById('date-from').value || '';
+      const dateTo = document.getElementById('date-to').value || '';
+
+      // 헤더
+      pdf.setFillColor(45, 80, 22);
+      pdf.rect(0, 0, 210, 14, 'F');
+      pdf.setFontSize(11);
+      pdf.setTextColor(255, 255, 255);
+      pdf.text('연구비 여비 증빙 자료', margin, 9);
+      pdf.setFontSize(9);
+      pdf.text(`${traveler}  |  ${dateFrom}${dateTo && dateTo !== dateFrom ? ' ~ ' + dateTo : ''}  |  출력일: ${new Date().toLocaleDateString('ko-KR')}`, margin, 13);
+
+      let yPos = 18;
+
       // 오피넷 캡쳐
       const fuelEl = document.getElementById('fuel-capture-area');
       const fuelCanvas = await html2canvas(fuelEl, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
       const fuelImg = fuelCanvas.toDataURL('image/jpeg', 0.95);
-
-      // A4: 210 x 297mm, 여백 15mm
-      const margin = 15;
-      const imgW = 210 - margin * 2;
       const fuelH = (fuelCanvas.height / fuelCanvas.width) * imgW;
+      const fuelHClamped = Math.min(fuelH, 110); // 최대 110mm
+      pdf.addImage(fuelImg, 'JPEG', margin, yPos, imgW, fuelHClamped);
+      yPos += fuelHClamped + 6;
 
-      // 페이지 1: 오피넷
-      pdf.setFontSize(10);
-      pdf.setTextColor(100);
-      const traveler = document.getElementById('traveler').value || '';
-      const dateFrom = document.getElementById('date-from').value || '';
-      const dateTo = document.getElementById('date-to').value || '';
-      pdf.text(`연구비 여비 증빙 자료  |  ${traveler}  |  ${dateFrom}${dateTo ? ' ~ ' + dateTo : ''}`, margin, 10);
-      pdf.addImage(fuelImg, 'JPEG', margin, 16, imgW, fuelH);
+      // 구분선
+      pdf.setDrawColor(200, 200, 200);
+      pdf.line(margin, yPos, pageW - margin, yPos);
+      yPos += 5;
 
-      // 페이지 2: 카카오맵
-      pdf.addPage();
-      pdf.text(`연구비 여비 증빙 자료  |  ${traveler}  |  ${dateFrom}${dateTo ? ' ~ ' + dateTo : ''}`, margin, 10);
-
+      // 카카오맵 캡쳐
       const routeEl = document.getElementById('map-capture-area');
       const routeCanvas = await html2canvas(routeEl, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
       const routeImg = routeCanvas.toDataURL('image/jpeg', 0.95);
       const routeH = (routeCanvas.height / routeCanvas.width) * imgW;
-      pdf.addImage(routeImg, 'JPEG', margin, 16, imgW, routeH);
+      const routeHClamped = Math.min(routeH, pageH - yPos - margin);
+      pdf.addImage(routeImg, 'JPEG', margin, yPos, imgW, routeHClamped);
 
-      // 파일명
       const filename = `여비증빙_${traveler}_${dateFrom || 'nodate'}.pdf`;
       pdf.save(filename);
 
