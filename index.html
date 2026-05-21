@@ -693,18 +693,29 @@
       const dateStr = dateFrom.replace(/-/g, '');
 
       // CORS 우회를 위해 프록시 사용
-      const url = `https://api.allorigins.win/get?url=${encodeURIComponent(
-        `https://www.opinet.co.kr/api/avgAllPrice.do?code=${OPINET_KEY}&out=json&prodcd=${fuelType}`
-      )}`;
+      const apiUrl = `https://www.opinet.co.kr/api/avgAllPrice.do?code=${OPINET_KEY}&out=json&prodcd=${fuelType}`;
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`;
 
-      const resp = await fetch(url);
+      const resp = await fetch(proxyUrl);
       const wrapper = await resp.json();
+      console.log('오피넷 원본 응답:', wrapper.contents);
       const json = JSON.parse(wrapper.contents);
 
       let price = 0;
-      if (json.RESULT && json.RESULT.OIL && json.RESULT.OIL.length > 0) {
-        price = json.RESULT.OIL[0].PRICE;
+      // 다양한 응답 구조 대응
+      if (json.RESULT) {
+        const oilArr = json.RESULT.OIL || json.RESULT.oil || [];
+        if (oilArr.length > 0) {
+          const item = oilArr[0];
+          price = item.PRICE || item.price || item.aPrice || item.APRICE || 0;
+        }
+      } else if (json.result) {
+        const oilArr = json.result.OIL || json.result.oil || [];
+        if (oilArr.length > 0) {
+          price = oilArr[0].PRICE || oilArr[0].price || 0;
+        }
       }
+      console.log('파싱된 가격:', price, '/ 전체 JSON:', JSON.stringify(json).slice(0, 300));
 
       fuelPrice = price;
 
