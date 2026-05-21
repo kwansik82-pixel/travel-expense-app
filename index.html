@@ -693,24 +693,24 @@
       const dateStr = dateFrom.replace(/-/g, '');
 
       // CORS 우회를 위해 프록시 사용
-      // 오피넷 avgRecentPrice API 시도 (날짜별 평균가)
-      const apiUrl = `https://www.opinet.co.kr/api/avgRecentPrice.do?code=${OPINET_KEY}&out=json&prodcd=${fuelType}&cnt=1`;
+      // ⑰ 특정 7일간 전국 일일 평균가격 API 사용 (date 파라미터 필수)
+      const apiUrl = `https://www.opinet.co.kr/api/dateAvgRecentPrice.do?code=${OPINET_KEY}&out=json&date=${dateStr}&prodcd=${fuelType}`;
       const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(apiUrl)}`;
 
       const resp = await fetch(proxyUrl);
       const text = await resp.text();
-      console.log('오피넷 원본 텍스트:', text.slice(0, 500));
+      console.log('오피넷 응답:', text.slice(0, 400));
       const json = JSON.parse(text);
 
       let price = 0;
-      // avgRecentPrice 응답 구조: RESULT.OIL 배열
       const oilArr = (json.RESULT && (json.RESULT.OIL || json.RESULT.oil)) || [];
-      console.log('전체 OIL 항목들:', JSON.stringify(oilArr).slice(0, 300));
+      console.log('OIL 항목 수:', oilArr.length, '/ 항목들:', JSON.stringify(oilArr).slice(0, 200));
 
       if (oilArr.length > 0) {
-        const item = oilArr[0];
-        price = item.PRICE || item.price || 0;
-        console.log('가격 항목:', JSON.stringify(item));
+        // 날짜가 정확히 일치하는 항목 우선, 없으면 첫번째
+        const match = oilArr.find(o => o.DATE === dateStr) || oilArr[oilArr.length - 1];
+        price = match.PRICE || match.price || 0;
+        console.log('사용 항목:', JSON.stringify(match));
       }
 
       fuelPrice = price;
